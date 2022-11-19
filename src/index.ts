@@ -48,10 +48,8 @@ function now() {
 }
 
 export interface SqliteOpenOptions {
-  /* callback function when database open if failure or success */
-  onOpen?: Function
   /* callback function when database table for key-value space has been created */
-  onReady?: Function
+  onReady?: (db: sqlite.Database) => any
   /* sqlite3 open flags for database file*/
   flags?: number
   /* serialization options */
@@ -59,6 +57,7 @@ export interface SqliteOpenOptions {
     serialize: (o: unknown) => (Buffer | string)
     deserialize: (p: string) => unknown
   }
+  /* default TTL in seconds */
   ttl?: number
 }
 
@@ -90,7 +89,7 @@ class SqliteCacheAdapter implements Store {
   /**
    * @param name - name of key-value space
    * @param path - path of database file
-   * @param {SqliteOpenOptions} options for opening database
+   * @param options - options for opening database
    */
   constructor(name: string, path: string, options: SqliteOpenOptions) {
     // const mode = options.flags || (sqlite.OPEN_CREATE | sqlite.OPEN_READWRITE)
@@ -108,6 +107,7 @@ class SqliteCacheAdapter implements Store {
 
     this.db = new sqlite(path)
     this.db.exec(ConfigurePragmas + util.format(CreateTableStatement, name, name, name))
+    options.onReady?.(this.db)
   }
 
 
@@ -202,19 +202,11 @@ class SqliteCacheAdapter implements Store {
   }
 
   #serialize(obj: unknown) {
-    try {
-      return this.#serializer.serialize(obj)
-    } catch (e) {
-      return undefined
-    }
+    return this.#serializer.serialize(obj)
   }
 
   #deserialize(payload: string) {
-    try {
-      return this.#serializer.deserialize(payload)
-    } catch (e) {
-      return undefined
-    }
+    return this.#serializer.deserialize(payload)
   }
 
   #purgeExpired() {
