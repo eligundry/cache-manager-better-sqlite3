@@ -2,11 +2,11 @@ import cbor from 'cbor-x'
 
 export default {
   json: {
-    serialize: o => JSON.stringify(o),
-    deserialize: p => JSON.parse(p)
+    serialize: (o: unknown) => JSON.stringify(o),
+    deserialize: (p: string) => JSON.parse(p)
   },
   cbor: {
-    serialize: o => cbor.encode(o),
-    deserialize: p => cbor.decode(p)
+    serialize: (o: unknown) => cbor.encode(o),
+    deserialize: (p: any) => cbor.decode(p)
   }
 }
