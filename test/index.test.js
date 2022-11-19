@@ -1,5 +1,5 @@
 const sqliteStore = require('../index')
-const sqlite3 = require('sqlite3')
+const sqlite3 = require('better-sqlite3')
 
 describe('sqliteStore.create', () => {
     it('should create table of passed name for given db', (done) => {
@@ -15,7 +15,7 @@ describe('sqliteStore.create', () => {
             name: 'fo1',
             path: '/tmp/test.db',
         })
-        
+
         sqliteStore.create({
             name: 'fo1',
             path: '/tmp/test.db',

@@ -10,22 +10,22 @@ describe('cacheManager promised', () => {
     })])
 
     it('set should serialized bad object to null', async () => {
-        await cache.set('foo-bad', function () { })
+        await cache.set('foo-bad', function() { })
         assert.equal(await cache.get('foo-bad'), null)
     })
 
     it('get value when TTL within range from set', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
-        await cache.set(key, valu, {ttl: -200})
+        await cache.set(key, valu, { ttl: -200 })
         const val = await cache.get(key)
         assert.equal(val, null)
     })
 
     it('should read saved value', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         const val = await cache.get(key)
@@ -40,7 +40,7 @@ describe('cacheManager promised', () => {
 
     it('removes existing key with del', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         await cache.del(key)
@@ -50,7 +50,7 @@ describe('cacheManager promised', () => {
 
     it('truncates database on reset', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         await cache.reset()
@@ -78,7 +78,7 @@ describe('cacheManager promised', () => {
     })
 
     it('mset respects ttl if passed', async () => {
-        await cache.mset('too1', 1, 'too2', 2, 'too3', 3, {ttl: -1})
+        await cache.mset('too1', 1, 'too2', 2, 'too3', 3, { ttl: -1 })
         const rs = await cache.mget('too1', 'too2', 'too3')
         assert.deepEqual(rs, [undefined, undefined, undefined])
     })

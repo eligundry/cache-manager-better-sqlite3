@@ -1,7 +1,7 @@
 const assert = require('assert')
 const cacheManager = require('cache-manager')
 const sinon = require('sinon')
-const sqlite3 = require('sqlite3')
+const sqlite3 = require('better-sqlite3')
 
 const sqliteStore = require('../index')
 
@@ -34,22 +34,22 @@ describe('cacheManager promised', () => {
     })
 
     it('set should serialized bad object to undefined', async () => {
-        await cache.set('foo-bad', function () { })
+        await cache.set('foo-bad', function() { })
         assert.strictEqual(await cache.get('foo-bad'), undefined)
     })
 
     it('get value when TTL within range from set', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
-        await cache.set(key, valu, {ttl: -200})
+        await cache.set(key, valu, { ttl: -200 })
         const val = await cache.get(key)
         assert.strictEqual(val, undefined)
     })
 
     it('should read saved value', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         const val = await cache.get(key)
@@ -64,7 +64,7 @@ describe('cacheManager promised', () => {
 
     it('removes existing key with del', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         await cache.del(key)
@@ -74,7 +74,7 @@ describe('cacheManager promised', () => {
 
     it('truncates database on reset', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         await cache.reset()
@@ -84,7 +84,7 @@ describe('cacheManager promised', () => {
 
     it('returns ttl of key', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         const v = await cache.ttl(key)
@@ -99,12 +99,12 @@ describe('cacheManager promised', () => {
 
     it('works with various combinations of passing ttl to set', async () => {
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu, -1)
         assert.strictEqual(await cache.get(key), undefined)
 
-        await cache.set(key, valu, {ttl: -1})
+        await cache.set(key, valu, { ttl: -1 })
         assert.strictEqual(await cache.get(key), undefined)
     })
 
@@ -128,7 +128,7 @@ describe('cacheManager promised', () => {
     })
 
     it('mset respects ttl if passed', async () => {
-        await cache.mset('too1', 1, 'too2', 2, 'too3', 3, {ttl: -1})
+        await cache.mset('too1', 1, 'too2', 2, 'too3', 3, { ttl: -1 })
         const rs = await cache.mget('too1', 'too2', 'too3')
         assert.deepEqual(rs, [undefined, undefined, undefined])
     })
@@ -170,11 +170,11 @@ describe('Sqlite failures failures', () => {
 
     it('should return undefined value if stored value is junk', async () => {
         const ts = new Date().getTime()
-        allSpy.yieldsRight(null, [{key: 'foo', val: '~junk~', created_at: ts, expire_at: ts + 36000}])
+        allSpy.yieldsRight(null, [{ key: 'foo', val: '~junk~', created_at: ts, expire_at: ts + 36000 }])
         assert.strictEqual(await cache.get("foo"), undefined)
 
         allSpy.reset()
-        allSpy.yieldsRight(null, [{key: 'foo', val: 'undefined', created_at: ts, expire_at: ts + 36000}])
+        allSpy.yieldsRight(null, [{ key: 'foo', val: 'undefined', created_at: ts, expire_at: ts + 36000 }])
         assert.strictEqual(await cache.get("foo"), undefined)
     })
 })
@@ -188,9 +188,9 @@ describe('sqliteStore construction', () => {
                 ttl: -1
             }
         })
-        
+
         const key = 'foo' + new Date().getTime()
-        const valu = {foo: 1}
+        const valu = { foo: 1 }
 
         await cache.set(key, valu)
         assert.strictEqual(await cache.get(key), undefined)
@@ -208,11 +208,11 @@ describe('cacheManager callback', () => {
             assert.strictEqual(res, undefined)
             done(err)
         })
-        
+
     })
-    
+
     it('set should serialize objects', (done) => {
-        cache.set('foo', {foo: 1}, (err) => {
+        cache.set('foo', { foo: 1 }, (err) => {
             done(err)
         })
     })
@@ -224,17 +224,17 @@ describe('cacheManager callback', () => {
     })
 
     it('mset sets multiple values with TTL', (done) => {
-        cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, {ttl: 10}, (err) => {
+        cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, { ttl: 10 }, (err) => {
             done(err)
         })
     })
 
     it('mget gets multiple values', (done) => {
-        cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, {ttl: 10}, (err) => {
+        cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, { ttl: 10 }, (err) => {
             if (err) {
-                return done(err)    
+                return done(err)
             }
-            
+
             cache.mget('goo1', 'goo2', 'goo3', err => {
                 done(err)
             })
