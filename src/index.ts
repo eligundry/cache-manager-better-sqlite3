@@ -38,7 +38,7 @@ const SelectKeysStatementFn = (keys: string[], tableName: string) => {
 }
 const SelectKeyStatement = 'SELECT * FROM %s WHERE key = ?'
 const SelectKeysStatement = "SELECT key FROM %s"
-const SelectKeysPatternStatement = "SELECT key FROM %s WHERE key LIKE ?"
+const SelectKeysPatternStatement = "SELECT key FROM %s WHERE key LIKE ? ORDER BY created_at"
 const DeleteStatement = "DELETE FROM %s WHERE key = ?"
 const TruncateStatement = "DELETE FROM %s"
 const PurgeExpiredStatement = "DELETE FROM %s WHERE expire_at < ?"
