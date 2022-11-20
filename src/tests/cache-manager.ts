@@ -1,243 +1,179 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, before, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import cacheManager from 'cache-manager'
+import cacheManager, { Cache } from 'cache-manager'
 import sinon from 'sinon'
-import sqlite3 from 'better-sqlite3'
-import sqliteStore from '../index'
+import sqliteStore, { SqliteCacheAdapter } from '../index'
 
-describe('cacheManager open callback', () => {
-  it('should be able to open via options', (done) => {
-    cacheManager.caching({
-      store: sqliteStore,
+const createKey = () => 'foo' + process.hrtime.bigint()
+
+describe('cache-manager.caching', () => {
+  it('should be able to open directly using SqliteCacheAdapter constructor', () => {
+    cacheManager.caching(new SqliteCacheAdapter({
       name: 'fool',
       path: '/tmp/cache.db',
-      options: {
-        onReady: done
+    }))
+  })
+
+  it('should be able to use default options', () => {
+    cacheManager.caching(sqliteStore)
+  })
+
+  it('should be able to open via options', (done) => {
+    cacheManager.caching(sqliteStore, {
+      name: 'fool',
+      path: '/tmp/cache.db',
+      onReady: () => {
+        done()
       }
     })
   })
 
-  it('should be able to use default options', (done) => {
-    cacheManager.caching({
-      store: sqliteStore,
-      options: {
-        onReady: done
+  it('should create the kv tables', () => {
+    cacheManager.caching(sqliteStore, {
+      path: ':memory:',
+      onReady: (db) => {
+        const schema = db.prepare("SELECT * FROM schema WHERE name = 'kv'").get()
+        assert(!!schema)
+        assert.equal(schema.name, 'kv')
       }
     })
   })
 })
 
-describe('cacheManager promised', () => {
-  const cache = cacheManager.caching({
-    store: sqliteStore,
-    path: '/tmp/test1.db'
+describe('cacheManager methods', () => {
+  let cache: Cache
+
+  before(async () => {
+    cache = await cacheManager.caching(sqliteStore, {
+      path: '/tmp/test1.db'
+    })
   })
 
-  it('set should serialized bad object to undefined', async () => {
-    await cache.set('foo-bad', function() { })
-    assert.strictEqual(await cache.get('foo-bad'), undefined)
-  })
-
-  it('get value when TTL within range from set', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu, { ttl: -200 })
-    const val = await cache.get(key)
-    assert.strictEqual(val, undefined)
-  })
-
-  it('should read saved value', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu)
-    const val = await cache.get(key)
-    assert.deepEqual(val, valu)
-  })
-
-  it('does not error on del non-existent key', async () => {
-    const key = 'foo' + new Date().getTime()
-
-    await cache.del(key)
-  })
-
-  it('removes existing key with del', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu)
-    await cache.del(key)
-    const v = await cache.get(key)
-    assert.strictEqual(v, undefined)
-  })
-
-  it('truncates database on reset', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu)
+  afterEach(async () => {
     await cache.reset()
-    const v = await cache.get(key)
-    assert.strictEqual(v, undefined)
   })
 
-  it('returns ttl of key', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu)
-    const v = await cache.ttl(key)
-    assert(v > 0)
+  it('should throw error if value is unserializable', async () => {
+    assert.rejects(async () => await cache.set('foo-bad', function() { }))
   })
 
-  it('returns ttl a negative value for non-existent keys', async () => {
-    const key = 'foo' + new Date().getTime()
-    const v = await cache.ttl(key)
-    assert(v < 0)
+  it('should set and get value', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value)
+
+    assert.deepEqual(await cache.get(key), value)
   })
 
-  it('works with various combinations of passing ttl to set', async () => {
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
+  it('should set and get value with ttl', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value, 200)
 
-    await cache.set(key, valu, -1)
-    assert.strictEqual(await cache.get(key), undefined)
-
-    await cache.set(key, valu, { ttl: -1 })
-    assert.strictEqual(await cache.get(key), undefined)
+    assert.deepEqual(await cache.get(key), value)
   })
 
-  it('mget fetches array of multiple objects ', async () => {
-    await cache.set('foo1', 1)
-    await cache.set('foo2', 2)
-    await cache.set('foo3', 3)
-    const rs = await cache.mget('foo1', 'foo2', 'foo3')
-    assert.deepEqual(rs, [1, 2, 3])
+  it('should return undefined if the key does not exist', async () => {
+    assert.equal(await cache.get('foo' + new Date().getTime()), undefined)
   })
 
-  it('mget can handle options', async () => {
-    const rs = await cache.mget('foo1', 'foo2', 'foo3', {})
-    assert.deepEqual(rs, [1, 2, 3])
+  it('should return undefined if the key has expired', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value, -200)
+
+    assert.deepEqual(await cache.get(key), undefined)
   })
 
-  it('mset sets multiple values in single call', async () => {
-    await cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3)
-    const rs = await cache.mget('goo1', 'goo2', 'goo3')
-    assert.deepEqual(rs, [1, 2, 3])
+  it('should delete saved key', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value)
+    await cache.del(key)
+    assert.equal(await cache.get(key), undefined)
   })
 
-  it('mset respects ttl if passed', async () => {
-    await cache.mset('too1', 1, 'too2', 2, 'too3', 3, { ttl: -1 })
-    const rs = await cache.mget('too1', 'too2', 'too3')
-    assert.deepEqual(rs, [undefined, undefined, undefined])
+  it('should not throw an error when deleting an non-existent key', async () => {
+    assert.doesNotReject(async () => await cache.del(createKey()))
+  })
+
+  it('should return all keys when queried', async () => {
+    const targetKey = createKey()
+    await cache.set(targetKey, 1)
+    const keys = await cache.store.keys()
+    assert(keys.includes(targetKey))
+    assert(keys.length > 0)
+  })
+
+  it('should truncate the database on reset', async () => {
+    await cache.set(createKey(), 1)
+    await cache.reset()
+    const keys = await cache.store.keys()
+    assert.equal(keys.length, 0)
+  })
+
+  it('should return the ttl of a key', async () => {
+    const key = createKey()
+    await cache.set(key, 1)
+    const ttl = await cache.store.ttl(key)
+    assert(typeof ttl === 'number')
+    assert(ttl > 0)
+  })
+
+  it('should return a ttl of Infinity if the key does not exist', async () => {
+    assert.equal(await cache.store.ttl(createKey()), Infinity)
+  })
+
+  it('should be able to mset and mget values', async () => {
+    const keys = ['mset1', 'mset2', 'mset3']
+    await cache.store.mset(keys.map((k, i) => [k, i + 1]))
+    const vals = await cache.store.mget(...keys)
+    assert.deepEqual(vals, [1, 2, 3])
+  })
+
+  it('should have mget return undefined for keys that do not exist', async () => {
+    const keys = ['mget0', 'mget1', 'mget2', 'mget3']
+    await cache.store.mset([[keys[0], 1], [keys[2], 3]])
+    const vals = await cache.store.mget(...keys)
+    assert.deepEqual(vals, [1, undefined, 3, undefined])
+  })
+
+  it('should have mset respect ttl if passed', async () => {
+    const keys = ['mset1', 'mset2', 'mset3']
+    await cache.store.mset(keys.map((k, i) => [k, i + 1]), -1)
+    const vals = await cache.store.mget(...keys)
+    assert.deepEqual(vals, [undefined, undefined, undefined])
   })
 })
 
-describe('Sqlite failures failures', () => {
-  const cache = cacheManager.caching({
-    store: sqliteStore
-  })
+describe('sqlite failure handling', () => {
+  let cache: Cache<SqliteCacheAdapter>
+  let prepareSpy: any
 
-  let allSpy
+  before(async () => {
+    cache = await cacheManager.caching(sqliteStore, {
+      path: ':memory:',
+      onReady: (db) => {
+        prepareSpy = sinon.stub(db, 'prepare')
+      }
+    })
+  })
 
   beforeEach(() => {
-    allSpy = sinon.stub(sqlite3.Database.prototype, "all")
-    allSpy.reset()
+    prepareSpy.reset()
   })
 
   afterEach(() => {
-    allSpy.restore()
+    prepareSpy.restore()
   })
 
   it('should fail get if sqlite errors out', async () => {
-    allSpy.yieldsRight(new Error('Fake error'))
-    try {
-      await cache.get("foo")
-    } catch (e) {
-      assert.equal(e.message, 'Fake error')
-    }
+    prepareSpy.rejects(new Error('Fake error'))
+    assert.rejects(async () => cache.get('foo'), 'Fake error')
   })
 
   it('should fail ttl if sqlite errors out', async () => {
-    allSpy.yieldsRight(new Error('Fake error'))
-    try {
-      await cache.ttl("foo")
-    } catch (e) {
-      assert.equal(e.message, 'Fake error')
-    }
-  })
-
-  it('should return undefined value if stored value is junk', async () => {
-    const ts = new Date().getTime()
-    allSpy.yieldsRight(null, [{ key: 'foo', val: '~junk~', created_at: ts, expire_at: ts + 36000 }])
-    assert.strictEqual(await cache.get("foo"), undefined)
-
-    allSpy.reset()
-    allSpy.yieldsRight(null, [{ key: 'foo', val: 'undefined', created_at: ts, expire_at: ts + 36000 }])
-    assert.strictEqual(await cache.get("foo"), undefined)
-  })
-})
-
-
-describe('sqliteStore construction', () => {
-  it('should apply default ttl of store when not passed in set', async () => {
-    const cache = cacheManager.caching({
-      store: sqliteStore,
-      options: {
-        ttl: -1
-      }
-    })
-
-    const key = 'foo' + new Date().getTime()
-    const valu = { foo: 1 }
-
-    await cache.set(key, valu)
-    assert.strictEqual(await cache.get(key), undefined)
-  })
-})
-
-
-describe('cacheManager callback', () => {
-  const cache = cacheManager.caching({
-    store: sqliteStore
-  })
-
-  it('get should return undefined when value does not exist', (done) => {
-    cache.get('!!!' + Math.random(), (err, res) => {
-      assert.strictEqual(res, undefined)
-      done(err)
-    })
-
-  })
-
-  it('set should serialize objects', (done) => {
-    cache.set('foo', { foo: 1 }, (err) => {
-      done(err)
-    })
-  })
-
-  it('mset sets multiple values in single call', (done) => {
-    cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, (err) => {
-      done(err)
-    })
-  })
-
-  it('mset sets multiple values with TTL', (done) => {
-    cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, { ttl: 10 }, (err) => {
-      done(err)
-    })
-  })
-
-  it('mget gets multiple values', (done) => {
-    cache.mset('goo1', 1, 'goo2', 2, 'goo3', 3, { ttl: 10 }, (err) => {
-      if (err) {
-        return done(err)
-      }
-
-      cache.mget('goo1', 'goo2', 'goo3', err => {
-        done(err)
-      })
-    })
+    prepareSpy.yieldsRight(new Error('Fake error'))
+    assert.rejects(async () => cache.store.ttl('foo'), 'Fake error')
   })
 })

@@ -1,6 +1,6 @@
 import sqlite from 'better-sqlite3'
 import util from 'node:util'
-import type { Store } from 'cache-manager'
+import type { Store, FactoryStore, Config } from 'cache-manager'
 import serializers from './serializers'
 
 const ConfigurePragmas = `
@@ -36,29 +36,30 @@ const SelectKeysStatementFn = (keys: string[], tableName: string) => {
     LEFT JOIN %s ON %s.key = getKeys.key
   `, tableName, tableName)
 }
+const SelectKeyStatement = 'SELECT * FROM %s WHERE key = ?'
 const SelectKeysStatement = "SELECT key FROM %s"
 const SelectKeysPatternStatement = "SELECT key FROM %s WHERE key LIKE ?"
 const DeleteStatement = "DELETE FROM %s WHERE key = ?"
 const TruncateStatement = "DELETE FROM %s"
 const PurgeExpiredStatement = "DELETE FROM %s WHERE expire_at < ?"
-const UpsertManyStatementPrefix = "INSERT OR REPLACE INTO %s(key, val, created_at, expire_at) VALUES ?, ?, ?, ?"
+const UpsertStatement = "INSERT OR REPLACE INTO %s(key, val, created_at, expire_at) VALUES (?, ?, ?, ?)"
 
 function now() {
   return new Date().getTime()
 }
 
-export interface SqliteOpenOptions {
+export interface SqliteCacheAdapterOptions extends Config {
+  name?: string
+  path: string
   /* callback function when database table for key-value space has been created */
   onReady?: (db: sqlite.Database) => any
-  /* sqlite3 open flags for database file*/
-  flags?: number
   /* serialization options */
   serializer?: 'json' | 'cbor' | {
     serialize: (o: unknown) => (Buffer | string)
     deserialize: (p: string) => unknown
   }
-  /* default TTL in seconds */
-  ttl?: number
+  /* options to pass to better-sqlite */
+  sqliteOptions?: sqlite.Options
 }
 
 interface CacheRow {
@@ -68,10 +69,7 @@ interface CacheRow {
   expire_at: number | null
 }
 
-class SqliteCacheAdapter implements Store {
-  /**
-   * @property {sqlite.Database} db for db instance
-   */
+export class SqliteCacheAdapter implements Store {
   db: sqlite.Database
 
   // Name of key-value space
@@ -80,7 +78,17 @@ class SqliteCacheAdapter implements Store {
   // Seralizer to serialize/deserialize payloads
   #serializer: {
     serialize: (o: unknown) => (Buffer | string)
-    deserialize: (p: string) => unknown
+    deserialize: (p: string) => any
+  }
+
+  #statements: {
+    get: sqlite.Statement<[string]>
+    set: sqlite.Statement
+    del: sqlite.Statement
+    keys: sqlite.Statement
+    keysPattern: sqlite.Statement
+    reset: sqlite.Statement
+    purgeExpired: sqlite.Statement
   }
 
   // TTL in seconds
@@ -91,9 +99,9 @@ class SqliteCacheAdapter implements Store {
    * @param path - path of database file
    * @param options - options for opening database
    */
-  constructor(name: string, path: string, options: SqliteOpenOptions) {
+  constructor(options: SqliteCacheAdapterOptions) {
     // const mode = options.flags || (sqlite.OPEN_CREATE | sqlite.OPEN_READWRITE)
-    this.#name = name
+    this.#name = options.name ?? 'kv'
     this.#default_ttl = typeof options.ttl === 'number' ? options.ttl : this.#default_ttl
     this.#serializer = serializers.cbor
 
@@ -105,18 +113,28 @@ class SqliteCacheAdapter implements Store {
       }
     }
 
-    this.db = new sqlite(path)
-    this.db.exec(ConfigurePragmas + util.format(CreateTableStatement, name, name, name))
+    this.db = new sqlite(options.path, options.sqliteOptions)
+    this.db.exec(ConfigurePragmas + util.format(CreateTableStatement, options.name, options.name, options.name))
+    this.#statements = {
+      get: this.db.prepare(util.format(SelectKeyStatement, this.#name)),
+      set: this.db.prepare(util.format(UpsertStatement, this.#name)),
+      del: this.db.prepare(util.format(DeleteStatement, this.#name)),
+      keys: this.db.prepare(util.format(SelectKeysStatement, this.#name)),
+      keysPattern: this.db.prepare(util.format(SelectKeysPatternStatement, this.#name)),
+      reset: this.db.prepare(util.format(TruncateStatement, this.#name)),
+      purgeExpired: this.db.prepare(util.format(PurgeExpiredStatement, this.#name)),
+    }
     options.onReady?.(this.db)
   }
 
 
   #fetchAll(keys: string[]): CacheRow[] {
     const stmt = this.db.prepare(SelectKeysStatementFn(keys, this.#name))
-    return stmt.all(keys)
+    return stmt.all(...keys)
   }
 
   async mget(...args: string[]) {
+    console.log(...args)
     const ts = now()
     const rows = this.#fetchAll(args)
     const hasExpiredRow = rows.find(r => r.expire_at !== null && r.expire_at < ts)
@@ -128,45 +146,46 @@ class SqliteCacheAdapter implements Store {
 
     // Deserialize rows returned by DB
     // If any expired or does not exist, set them to undefined
-    return rows.map(r => (r.expire_at === null || r.expire_at < ts) ? this.#deserialize(r.val) : undefined)
+    return rows.map(r => r.expire_at !== null && r.expire_at > ts && r.val ? this.#deserialize(r.val) : undefined)
   }
 
   async get<T>(key: string): Promise<T | undefined> {
-    return this.mget(key) as (T | undefined)
-  }
+    const ts = now()
+    const row: CacheRow = this.#statements.get.get(key)
 
-  async mset(...args: Parameters<Store['mset']>) {
-    const keyValues = (args.filter(o => Array.isArray(o)) ?? []) as [string, unknown][]
-
-    if (keyValues.length === 0) {
-      return
+    if (!row || !row.expire_at || !row.val) {
+      return undefined
+    } else if (row.expire_at < ts) {
+      process.nextTick(() => this.#purgeExpired())
+      return undefined
     }
 
-    const ttl = typeof args.at(-1) === 'number' ? args.at(-1) as number : this.#default_ttl
+    return this.#serializer.deserialize(row.val)
+  }
+
+  async mset(args: [string, unknown][], keyTTL?: number) {
+    const ttl = keyTTL ?? this.#default_ttl
     const ts = now()
     const expire = ts + ttl
-    const stmt = this.db.prepare(util.format(UpsertManyStatementPrefix, this.#name))
 
     this.db.transaction(() => {
-      for (const [key, value] of keyValues) {
+      for (const [key, value] of args) {
         const serializedValue = this.#serialize(value)
-        stmt.run(key, serializedValue, ts, expire)
+        this.#statements.set.run(key, serializedValue, ts, expire)
       }
-    })
+    })()
   }
 
   async set<T>(key: string, value: T, ttl?: number) {
-    this.mset([[key, value]], ttl)
+    await this.mset([[key, value]], ttl)
   }
 
   async mdel(...args: string[]) {
-    const stmt = this.db.prepare(util.format(DeleteStatement, this.#name))
-
     this.db.transaction(() => {
       for (const key of args) {
-        stmt.run(key)
+        this.#statements.del.run(key)
       }
-    })
+    })()
   }
 
   async del(key: string) {
@@ -174,7 +193,7 @@ class SqliteCacheAdapter implements Store {
   }
 
   async reset() {
-    this.db.exec(util.format(TruncateStatement, this.#name))
+    this.#statements.reset.run()
   }
 
   async ttl(key: string): Promise<number> {
@@ -191,11 +210,9 @@ class SqliteCacheAdapter implements Store {
     let rows: Pick<CacheRow, 'key'>[] = []
 
     if (pattern) {
-      const stmt = this.db.prepare(util.format(SelectKeysPatternStatement, this.#name))
-      rows = stmt.all(pattern)
+      rows = this.#statements.keysPattern.all(pattern)
     } else {
-      const stmt = this.db.prepare(util.format(SelectKeysStatement, this.#name))
-      rows = stmt.all()
+      rows = this.#statements.keys.all()
     }
 
     return rows.map(r => r.key)
@@ -210,15 +227,16 @@ class SqliteCacheAdapter implements Store {
   }
 
   #purgeExpired() {
-    const stmt = this.db.prepare(util.format(PurgeExpiredStatement, this.#name))
-    stmt.run(now())
+    this.#statements.purgeExpired.run(now())
   }
 }
 
-function create(args: { name?: string, path?: string, options?: SqliteOpenOptions }) {
-  return new SqliteCacheAdapter(args.name || 'kv', args.path || ':memory:', args.options || {})
+const sqliteStore: FactoryStore<SqliteCacheAdapter, SqliteCacheAdapterOptions> = (options) => {
+  return new SqliteCacheAdapter({
+    name: 'kv',
+    path: ':memory:',
+    ...options,
+  })
 }
 
-export default {
-  create,
-}
+export default sqliteStore

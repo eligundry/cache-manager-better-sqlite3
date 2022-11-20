@@ -1,4 +1,4 @@
-import cbor from 'cbor-x'
+import * as cbor from 'cbor-x'
 
 export default {
   json: {
