@@ -158,7 +158,6 @@ export class SqliteCacheAdapter implements Store {
   }
 
   async mget(...args: string[]) {
-    console.log(...args)
     const ts = now()
     const rows = this.#fetchAll(args)
     const hasExpiredRow = rows.find(

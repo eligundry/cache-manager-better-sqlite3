@@ -94,6 +94,23 @@ describe('cacheManager methods', () => {
     assert.deepEqual(await cache.get(key), undefined)
   })
 
+  it('should have get purge expired keys if key is expired', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value, -200)
+    await cache.set(createKey(), 1, -500)
+
+    assert.deepEqual(await cache.get(key), undefined)
+
+    await new Promise((resolve) => {
+      process.nextTick(() => {
+        const stmt = db.prepare('select count(*) as records from kv')
+        assert.equal(stmt.get().records, 0)
+        resolve(true)
+      })
+    })
+  })
+
   it('should update value if it already exists', async () => {
     const key = createKey()
     await cache.set(key, 1)
@@ -166,6 +183,35 @@ describe('cacheManager methods', () => {
     ])
     const vals = await cache.store.mget(...keys)
     assert.deepEqual(vals, [1, undefined, 3, undefined])
+  })
+
+  it('should have mget purge expired keys if a key is expired', async () => {
+    const keys = [createKey(), createKey(), createKey(), createKey()]
+    await cache.store.mset(
+      [
+        [keys[0], 1],
+        [keys[1], 2],
+      ],
+      -500
+    )
+    await cache.store.mset([
+      [keys[2], 3],
+      [keys[3], 4],
+    ])
+    const [expired1, expired2, valid1, valid2] = await cache.store.mget(...keys)
+
+    assert.equal(expired1, undefined)
+    assert.equal(expired2, undefined)
+    assert.equal(valid1, 3)
+    assert.equal(valid2, 4)
+
+    await new Promise((resolve) => {
+      process.nextTick(() => {
+        const stmt = db.prepare('select count(*) as records from kv')
+        assert.equal(stmt.get().records, 2)
+        resolve(true)
+      })
+    })
   })
 
   it('should have mset respect ttl if passed', async () => {
