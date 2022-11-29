@@ -1,9 +1,12 @@
 {
   "name": "cache-manager-better-sqlite3",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A modern SQLite store for node-cache-manager using better-sqlite3",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "./dist/*"
+  ],
   "type": "module",
   "scripts": {
     "test": "node --loader ts-node/esm --test src/tests/*.ts",
@@ -13,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/maxpert/node-cache-manager-sqlite.git"
+    "url": "https://github.com/eligundry/cache-manager-better-sqlite3.git"
   },
   "keywords": [
     "cache-manager",
