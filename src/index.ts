@@ -25,24 +25,30 @@ CREATE INDEX IF NOT EXISTS index_expire_%s ON %s(expire_at);
 // the keys were passed in.
 const SelectKeysStatementFn = (keys: string[], tableName: string) => {
   const placeholderValues = keys.map(() => `(?)`).join(', ')
-  return util.format(`
-    WITH getKeys(key) AS (VALUES ${placeholderValues})
-    SELECT
-      getKeys.key,
-      val,
-      created_at,
-      expire_at
-    FROM getKeys
-    LEFT JOIN %s ON %s.key = getKeys.key
-  `, tableName, tableName)
+  return util.format(
+    `
+      WITH getKeys(key) AS (VALUES ${placeholderValues})
+      SELECT
+        getKeys.key,
+        val,
+        created_at,
+        expire_at
+      FROM getKeys
+      LEFT JOIN %s ON %s.key = getKeys.key
+    `,
+    tableName,
+    tableName
+  )
 }
 const SelectKeyStatement = 'SELECT * FROM %s WHERE key = ?'
-const SelectKeysStatement = "SELECT key FROM %s"
-const SelectKeysPatternStatement = "SELECT key FROM %s WHERE key LIKE ? ORDER BY created_at"
-const DeleteStatement = "DELETE FROM %s WHERE key = ?"
-const TruncateStatement = "DELETE FROM %s"
-const PurgeExpiredStatement = "DELETE FROM %s WHERE expire_at < ?"
-const UpsertStatement = "INSERT OR REPLACE INTO %s(key, val, created_at, expire_at) VALUES (?, ?, ?, ?)"
+const SelectKeysStatement = 'SELECT key FROM %s'
+const SelectKeysPatternStatement =
+  'SELECT key FROM %s WHERE key LIKE ? ORDER BY created_at'
+const DeleteStatement = 'DELETE FROM %s WHERE key = ?'
+const TruncateStatement = 'DELETE FROM %s'
+const PurgeExpiredStatement = 'DELETE FROM %s WHERE expire_at < ?'
+const UpsertStatement =
+  'INSERT OR REPLACE INTO %s(key, val, created_at, expire_at) VALUES (?, ?, ?, ?)'
 
 function now() {
   return new Date().getTime()
@@ -54,8 +60,11 @@ export interface SqliteCacheAdapterOptions extends Config {
   /* callback function when database table for key-value space has been created */
   onReady?: (db: sqlite.Database) => any
   /* serialization options */
-  serializer?: 'json' | 'cbor' | {
-    serialize: (o: unknown) => (Buffer | string)
+  serializer?:
+  | 'json'
+  | 'cbor'
+  | {
+    serialize: (o: unknown) => Buffer | string
     deserialize: (p: string) => unknown
   }
   /* options to pass to better-sqlite */
@@ -77,7 +86,7 @@ export class SqliteCacheAdapter implements Store {
 
   // Seralizer to serialize/deserialize payloads
   #serializer: {
-    serialize: (o: unknown) => (Buffer | string)
+    serialize: (o: unknown) => Buffer | string
     deserialize: (p: string) => any
   }
 
@@ -102,7 +111,8 @@ export class SqliteCacheAdapter implements Store {
   constructor(options: SqliteCacheAdapterOptions) {
     // const mode = options.flags || (sqlite.OPEN_CREATE | sqlite.OPEN_READWRITE)
     this.#name = options.name ?? 'kv'
-    this.#default_ttl = typeof options.ttl === 'number' ? options.ttl : this.#default_ttl
+    this.#default_ttl =
+      typeof options.ttl === 'number' ? options.ttl : this.#default_ttl
     this.#serializer = serializers.cbor
 
     if (options.serializer !== null) {
@@ -114,19 +124,30 @@ export class SqliteCacheAdapter implements Store {
     }
 
     this.db = new sqlite(options.path, options.sqliteOptions)
-    this.db.exec(ConfigurePragmas + util.format(CreateTableStatement, options.name, options.name, options.name))
+    this.db.exec(
+      ConfigurePragmas +
+      util.format(
+        CreateTableStatement,
+        options.name,
+        options.name,
+        options.name
+      )
+    )
     this.#statements = {
       get: this.db.prepare(util.format(SelectKeyStatement, this.#name)),
       set: this.db.prepare(util.format(UpsertStatement, this.#name)),
       del: this.db.prepare(util.format(DeleteStatement, this.#name)),
       keys: this.db.prepare(util.format(SelectKeysStatement, this.#name)),
-      keysPattern: this.db.prepare(util.format(SelectKeysPatternStatement, this.#name)),
+      keysPattern: this.db.prepare(
+        util.format(SelectKeysPatternStatement, this.#name)
+      ),
       reset: this.db.prepare(util.format(TruncateStatement, this.#name)),
-      purgeExpired: this.db.prepare(util.format(PurgeExpiredStatement, this.#name)),
+      purgeExpired: this.db.prepare(
+        util.format(PurgeExpiredStatement, this.#name)
+      ),
     }
     options.onReady?.(this.db)
   }
-
 
   #fetchAll(keys: string[]): CacheRow[] {
     const stmt = this.db.prepare(SelectKeysStatementFn(keys, this.#name))
@@ -137,7 +158,9 @@ export class SqliteCacheAdapter implements Store {
     console.log(...args)
     const ts = now()
     const rows = this.#fetchAll(args)
-    const hasExpiredRow = rows.find(r => r.expire_at !== null && r.expire_at < ts)
+    const hasExpiredRow = rows.find(
+      (r) => r.expire_at !== null && r.expire_at < ts
+    )
 
     // Schedule cleanup for expired rows
     if (hasExpiredRow) {
@@ -146,7 +169,11 @@ export class SqliteCacheAdapter implements Store {
 
     // Deserialize rows returned by DB
     // If any expired or does not exist, set them to undefined
-    return rows.map(r => r.expire_at !== null && r.expire_at > ts && r.val ? this.#deserialize(r.val) : undefined)
+    return rows.map((r) =>
+      r.expire_at !== null && r.expire_at > ts && r.val
+        ? this.#deserialize(r.val)
+        : undefined
+    )
   }
 
   async get<T>(key: string): Promise<T | undefined> {
@@ -215,7 +242,7 @@ export class SqliteCacheAdapter implements Store {
       rows = this.#statements.keys.all()
     }
 
-    return rows.map(r => r.key)
+    return rows.map((r) => r.key)
   }
 
   #serialize(obj: unknown) {
@@ -231,7 +258,10 @@ export class SqliteCacheAdapter implements Store {
   }
 }
 
-const sqliteStore: FactoryStore<SqliteCacheAdapter, SqliteCacheAdapterOptions> = (options) => {
+const sqliteStore: FactoryStore<
+  SqliteCacheAdapter,
+  SqliteCacheAdapterOptions
+> = (options) => {
   return new SqliteCacheAdapter({
     name: 'kv',
     path: ':memory:',
