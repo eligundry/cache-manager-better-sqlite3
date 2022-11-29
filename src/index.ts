@@ -1,7 +1,18 @@
 import sqlite from 'better-sqlite3'
 import util from 'node:util'
 import type { Store, FactoryStore, Config } from 'cache-manager'
-import serializers from './serializers'
+import * as cbor from 'cbor-x'
+
+export const serializers = {
+  json: {
+    serialize: (o: unknown) => JSON.stringify(o),
+    deserialize: (p: string) => JSON.parse(p),
+  },
+  cbor: {
+    serialize: (o: unknown) => cbor.encode(o),
+    deserialize: (p: any) => cbor.decode(p),
+  },
+}
 
 const ConfigurePragmas = `
 PRAGMA main.synchronous = NORMAL;
@@ -64,8 +75,12 @@ export interface SqliteCacheAdapterOptions extends Config {
     | 'json'
     | 'cbor'
     | {
-        serialize: (o: unknown) => Buffer | string
-        deserialize: (p: string) => unknown
+        serialize:
+          | typeof serializers['json']['serialize']
+          | typeof serializers['cbor']['serialize']
+        deserialize:
+          | typeof serializers['json']['deserialize']
+          | typeof serializers['cbor']['deserialize']
       }
   /* options to pass to better-sqlite */
   sqliteOptions?: sqlite.Options
