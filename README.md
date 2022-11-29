@@ -1,4 +1,4 @@
-# cache-manager-better-sqlite
+# cache-manager-better-sqlite3
 
 A modern SQlite cache store for [node-cache-manager](https://github.com/BryanDonovan/node-cache-manager). Featuring:
 
@@ -38,7 +38,7 @@ SQLite based storage is ideal for:
 ## Installation
 
 ```
-npm i cache-manager-sqlite
+npm i cache-manager-better-sqlite3
 ```
 
 ## Requirements

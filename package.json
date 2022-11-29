@@ -1,8 +1,8 @@
 {
-  "name": "cache-manager-better-sqlite",
+  "name": "cache-manager-better-sqlite3",
   "version": "1.0.0",
   "description": "A modern SQLite store for node-cache-manager using better-sqlite3",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
   "scripts": {
