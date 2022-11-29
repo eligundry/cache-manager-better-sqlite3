@@ -112,7 +112,6 @@ export class SqliteCacheAdapter implements Store {
    * @param options - options for opening database
    */
   constructor(options: SqliteCacheAdapterOptions) {
-    // const mode = options.flags || (sqlite.OPEN_CREATE | sqlite.OPEN_READWRITE)
     this.#name = options.name ?? 'kv'
     this.#default_ttl =
       typeof options.ttl === 'number' ? options.ttl : this.#default_ttl
