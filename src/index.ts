@@ -92,12 +92,12 @@ export class SqliteCacheAdapter implements Store {
 
   #statements: {
     get: sqlite.Statement<[string]>
-    set: sqlite.Statement
-    del: sqlite.Statement
+    set: sqlite.Statement<[string, string | Buffer, number, number]>
+    del: sqlite.Statement<[string]>
     keys: sqlite.Statement
-    keysPattern: sqlite.Statement
+    keysPattern: sqlite.Statement<[string]>
     reset: sqlite.Statement
-    purgeExpired: sqlite.Statement
+    purgeExpired: sqlite.Statement<[number]>
   }
 
   // TTL in seconds
