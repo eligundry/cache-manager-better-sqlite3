@@ -56,17 +56,17 @@ function now() {
 
 export interface SqliteCacheAdapterOptions extends Config {
   name?: string
-  path: string
+  path?: string
   /* callback function when database table for key-value space has been created */
   onReady?: (db: sqlite.Database) => any
   /* serialization options */
   serializer?:
-  | 'json'
-  | 'cbor'
-  | {
-    serialize: (o: unknown) => Buffer | string
-    deserialize: (p: string) => unknown
-  }
+    | 'json'
+    | 'cbor'
+    | {
+        serialize: (o: unknown) => Buffer | string
+        deserialize: (p: string) => unknown
+      }
   /* options to pass to better-sqlite */
   sqliteOptions?: sqlite.Options
 }
@@ -123,15 +123,15 @@ export class SqliteCacheAdapter implements Store {
       }
     }
 
-    this.db = new sqlite(options.path, options.sqliteOptions)
+    this.db = new sqlite(options.path ?? ':memory:', options.sqliteOptions)
     this.db.exec(
       ConfigurePragmas +
-      util.format(
-        CreateTableStatement,
-        options.name,
-        options.name,
-        options.name
-      )
+        util.format(
+          CreateTableStatement,
+          options.name,
+          options.name,
+          options.name
+        )
     )
     this.#statements = {
       get: this.db.prepare(util.format(SelectKeyStatement, this.#name)),
