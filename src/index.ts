@@ -103,6 +103,9 @@ export class SqliteCacheAdapter implements Store {
   // TTL in seconds
   #default_ttl = 24 * 60 * 60
 
+  // Checks if value is cacheable
+  #isCachable: SqliteCacheAdapterOptions['isCacheable']
+
   /**
    * @param name - name of key-value space
    * @param path - path of database file
@@ -146,6 +149,7 @@ export class SqliteCacheAdapter implements Store {
         util.format(PurgeExpiredStatement, this.#name)
       ),
     }
+    this.#isCachable = options.isCacheable
     options.onReady?.(this.db)
   }
 
@@ -197,6 +201,10 @@ export class SqliteCacheAdapter implements Store {
 
     this.db.transaction(() => {
       for (const [key, value] of args) {
+        if (this.#isCachable && !this.#isCachable(value)) {
+          throw new Error(`no cacheable value ${JSON.stringify(value)}`)
+        }
+
         const serializedValue = this.#serialize(value)
         this.#statements.set.run(key, serializedValue, ts, expire)
       }

@@ -2,6 +2,7 @@ import { describe, it, before, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import cacheManager, { Cache } from 'cache-manager'
 import sinon from 'sinon'
+import { Database } from 'better-sqlite3'
 import sqliteStore, { SqliteCacheAdapter } from '../index'
 
 const createKey = () => 'foo' + process.hrtime.bigint()
@@ -46,10 +47,14 @@ describe('cache-manager.caching', () => {
 
 describe('cacheManager methods', () => {
   let cache: Cache
+  let db: Database
 
   before(async () => {
     cache = await cacheManager.caching(sqliteStore, {
       path: '/tmp/test1.db',
+      onReady: (database) => {
+        db = database
+      },
     })
   })
 
@@ -78,7 +83,7 @@ describe('cacheManager methods', () => {
   })
 
   it('should return undefined if the key does not exist', async () => {
-    assert.equal(await cache.get('foo' + new Date().getTime()), undefined)
+    assert.equal(await cache.get(createKey()), undefined)
   })
 
   it('should return undefined if the key has expired', async () => {
@@ -87,6 +92,14 @@ describe('cacheManager methods', () => {
     await cache.set(key, value, -200)
 
     assert.deepEqual(await cache.get(key), undefined)
+  })
+
+  it('should update value if it already exists', async () => {
+    const key = createKey()
+    await cache.set(key, 1)
+    assert.equal(await cache.get(key), 1)
+    await cache.set(key, 200)
+    assert.equal(await cache.get(key), 200)
   })
 
   it('should delete saved key', async () => {
@@ -163,6 +176,54 @@ describe('cacheManager methods', () => {
     )
     const vals = await cache.store.mget(...keys)
     assert.deepEqual(vals, [undefined, undefined, undefined])
+  })
+
+  it('should be able to wrap an async function and set value to what is returned', async () => {
+    const key = createKey()
+    await cache.wrap(key, async () => {
+      return 1
+    })
+    assert.equal(await cache.get(key), 1)
+  })
+
+  it('should not set value if isCacheable returns false', async () => {
+    const isCacheableSpy = sinon.spy()
+    cache = await cacheManager.caching(sqliteStore, {
+      path: '/tmp/test1.db',
+      isCacheable: (value) => {
+        isCacheableSpy(value)
+        return false
+      },
+    })
+    assert.rejects(async () => await cache.set('key', 1), /no cacheable value/)
+    sinon.assert.calledOnce(isCacheableSpy)
+    sinon.assert.calledWith(isCacheableSpy, 1)
+  })
+
+  it('should not mset values if isCacheable returns false', async () => {
+    const isCacheableSpy = sinon.spy()
+    cache = await cacheManager.caching(sqliteStore, {
+      path: '/tmp/test1.db',
+      isCacheable: (v) => {
+        isCacheableSpy(v)
+        return typeof v === 'number' && v % 2 !== 0
+      },
+    })
+
+    assert.rejects(
+      async () =>
+        await cache.store.mset([
+          ['foo', 1],
+          ['bar', 2],
+          ['baz', 3],
+        ]),
+      /no cacheable value/
+    )
+    sinon.assert.calledTwice(isCacheableSpy)
+
+    // No rows should be saved in this instance
+    const query = db.prepare('select count(*) as records from kv')
+    assert.equal(query.get().records, 0)
   })
 })
 
