@@ -214,6 +214,24 @@ describe('cacheManager methods', () => {
     })
   })
 
+  it('should have mget retain gaps in queries', async () => {
+    const keys = [createKey(), 'nope', createKey()]
+    await cache.store.mset([
+      [keys[0], 1],
+      [keys[2], 2],
+    ])
+    assert.deepEqual(await cache.store.mget(...keys), [1, undefined, 2])
+  })
+
+  it('should have mget retain order of the keys in queries', async () => {
+    const keys = [createKey(), createKey(), createKey()]
+    await cache.store.mset(keys.map((k, i) => [k, i]))
+    assert.deepEqual(
+      await cache.store.mget(keys[1], keys[0], keys[2]),
+      [1, 0, 2]
+    )
+  })
+
   it('should have mset respect ttl if passed', async () => {
     const keys = ['mset1', 'mset2', 'mset3']
     await cache.store.mset(
