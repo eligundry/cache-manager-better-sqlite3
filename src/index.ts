@@ -116,7 +116,8 @@ export class SqliteCacheAdapter implements Store {
   }
 
   // TTL in seconds
-  #default_ttl = 24 * 60 * 60
+  // If it is not provided, it will never expire.
+  #default_ttl = Infinity
 
   // Checks if value is cacheable
   #isCachable: SqliteCacheAdapterOptions['isCacheable']
@@ -207,10 +208,13 @@ export class SqliteCacheAdapter implements Store {
     return this.#serializer.deserialize(row.val)
   }
 
-  async mset(args: [string, unknown][], keyTTL?: number) {
-    const ttl = keyTTL ?? this.#default_ttl
+  async mset(args: [string, unknown][], keyTTL?: number | typeof Infinity) {
     const ts = now()
-    const expire = ts + ttl
+    let expire: number = this.#default_ttl
+
+    if (keyTTL && keyTTL < Infinity) {
+      expire = ts + keyTTL
+    }
 
     this.db.transaction(() => {
       for (const [key, value] of args) {

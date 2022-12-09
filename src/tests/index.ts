@@ -74,6 +74,18 @@ describe('cacheManager methods', () => {
     assert.deepEqual(await cache.get(key), value)
   })
 
+  it('should set ttl to Infinity if not provided', async () => {
+    const key = createKey()
+    const value = { foo: 1 }
+    await cache.set(key, value)
+
+    assert.deepEqual(await cache.get(key), value)
+
+    const stmt = db.prepare('select * from kv where key = ?')
+    const row = stmt.get(key)
+    assert.equal(row.expire_at, Infinity)
+  })
+
   it('should set and get value with ttl', async () => {
     const key = createKey()
     const value = { foo: 1 }
