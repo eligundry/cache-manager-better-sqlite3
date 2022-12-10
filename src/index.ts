@@ -62,7 +62,7 @@ const UpsertStatement =
   'INSERT OR REPLACE INTO %s(key, val, created_at, expire_at) VALUES (?, ?, ?, ?)'
 
 function now() {
-  return new Date().getTime() / 1000
+  return Math.floor(new Date().getTime() / 1000)
 }
 
 export interface SqliteCacheAdapterOptions extends Config {
